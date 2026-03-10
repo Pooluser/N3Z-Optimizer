@@ -22,7 +22,7 @@ $Script:PowerPlanFile    = Join-Path $Script:AssetsDir "N3Z-Optimized.pow"
 $Script:TempPowerPlanFile = Join-Path $env:TEMP "N3Z-Optimized.pow"
 
 # CAMBIA TUUSUARIO POR TU USUARIO REAL DE GITHUB
-$Script:PowerPlanUrl     = "https://raw.githubusercontent.com/TUUSUARIO/N3Z-Optimizer/main/assets/N3Z-Optimized.pow"
+$Script:PowerPlanUrl = "https://raw.githubusercontent.com/Pooluser/N3Z-Optimizer/main/assets/N3Z-Optimized.pow"
 
 New-Item -ItemType Directory -Path $Script:BaseDir -Force | Out-Null
 New-Item -ItemType Directory -Path $Script:ConfigDir -Force | Out-Null
@@ -838,5 +838,6 @@ do {
         }
     }
 } while ($true)
+
 
 Write-Log "===== Fin de ejecucion ====="
