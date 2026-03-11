@@ -11,18 +11,17 @@ $ErrorActionPreference = "SilentlyContinue"
 # GitHub One-Line Ready
 # =========================================================
 
-$Script:ScriptRoot       = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-$Script:AppName          = "N3Z OPTIMIZER"
-$Script:Version          = "2.2"
-$Script:BaseDir          = Join-Path $env:ProgramData "N3Z-Optimizer"
-$Script:LogFile          = Join-Path $Script:BaseDir "n3z-optimizer.log"
-$Script:ConfigDir        = Join-Path $Script:BaseDir "backup"
-$Script:AssetsDir        = Join-Path $Script:ScriptRoot "assets"
-$Script:PowerPlanFile    = Join-Path $Script:AssetsDir "N3Z-Optimized.pow"
+$Script:ScriptRoot        = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+$Script:AppName           = "N3Z OPTIMIZER"
+$Script:Version           = "2.3"
+$Script:BaseDir           = Join-Path $env:ProgramData "N3Z-Optimizer"
+$Script:LogFile           = Join-Path $Script:BaseDir "n3z-optimizer.log"
+$Script:ConfigDir         = Join-Path $Script:BaseDir "backup"
+$Script:AssetsDir         = Join-Path $Script:ScriptRoot "assets"
+$Script:PowerPlanFile     = Join-Path $Script:AssetsDir "N3Z-Optimized.pow"
 $Script:TempPowerPlanFile = Join-Path $env:TEMP "N3Z-Optimized.pow"
 
-# CAMBIA TUUSUARIO POR TU USUARIO REAL DE GITHUB
-$Script:PowerPlanUrl = "https://raw.githubusercontent.com/Pooluser/N3Z-Optimizer/main/assets/N3Z-Optimized.pow"
+$Script:PowerPlanUrl      = "https://raw.githubusercontent.com/Pooluser/N3Z-Optimizer/main/assets/N3Z-Optimized.pow"
 
 New-Item -ItemType Directory -Path $Script:BaseDir -Force | Out-Null
 New-Item -ItemType Directory -Path $Script:ConfigDir -Force | Out-Null
@@ -650,6 +649,130 @@ function Apply-DebloatOptional {
     }
 }
 
+# =========================================================
+# NEW KERNEL-LIKE ADDITIONS
+# =========================================================
+
+function Remove-AppxPackagesSafe {
+    param([string[]]$PackageNames)
+
+    foreach ($app in $PackageNames) {
+        try {
+            $pkg = Get-AppxPackage -Name $app -AllUsers -ErrorAction SilentlyContinue
+            if ($pkg) {
+                $pkg | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+                Write-Ok "App instalada removida: $app"
+            } else {
+                Write-Info "App instalada no encontrada: $app"
+            }
+        } catch {
+            Write-Warn "No se pudo remover AppX instalada: $app"
+        }
+
+        try {
+            $prov = Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Where-Object DisplayName -eq $app
+            if ($prov) {
+                $prov | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Out-Null
+                Write-Ok "Provisioned app removida: $app"
+            } else {
+                Write-Info "Provisioned app no encontrada: $app"
+            }
+        } catch {
+            Write-Warn "No se pudo remover provisioned AppX: $app"
+        }
+    }
+}
+
+function Apply-KernelLikePolicies {
+    $regItems = @(
+        @{ Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent"; Name="DisableWindowsConsumerFeatures"; Value=1; Type="DWord" }
+        @{ Path="HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent"; Name="DisableSoftLanding"; Value=1; Type="DWord" }
+        @{ Path="HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications"; Name="GlobalUserDisabled"; Value=1; Type="DWord" }
+        @{ Path="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; Name="TaskbarMn"; Value=0; Type="DWord" }
+        @{ Path="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; Name="TaskbarDa"; Value=0; Type="DWord" }
+        @{ Path="HKCU:\Software\Microsoft\Windows\CurrentVersion\Search"; Name="SearchboxTaskbarMode"; Value=0; Type="DWord" }
+    )
+
+    Set-RegistryValuesBatch -Items $regItems
+    Write-Ok "Kernel-like policies aplicadas."
+}
+
+function Apply-KernelLikeServiceReduction {
+    Disable-ServiceSafe "RemoteRegistry"
+    Disable-ServiceSafe "RemoteAccess"
+    Disable-ServiceSafe "ssh-agent"
+    Disable-ServiceSafe "WMPNetworkSvc"
+    Disable-ServiceSafe "PrintNotify"
+    Disable-ServiceSafe "DusmSvc"
+
+    Set-ServiceManualSafe "tzautoupdate"
+    Set-ServiceManualSafe "lltdsvc"
+    Set-ServiceManualSafe "lmhosts"
+    Set-ServiceManualSafe "SensrSvc"
+    Set-ServiceManualSafe "WSearch"
+    Set-ServiceManualSafe "MapsBroker"
+    Set-ServiceManualSafe "PhoneSvc"
+
+    Write-Ok "Reduccion de servicios tipo Kernel aplicada."
+}
+
+function Apply-KernelLikeTaskReduction {
+    Disable-ScheduledTaskSafe -TaskPath "\Microsoft\Windows\Maps\" -TaskName "MapsUpdateTask"
+    Disable-ScheduledTaskSafe -TaskPath "\Microsoft\Windows\Maps\" -TaskName "MapsToastTask"
+    Disable-ScheduledTaskSafe -TaskPath "\Microsoft\Windows\Feedback\Siuf\" -TaskName "DmClient"
+    Disable-ScheduledTaskSafe -TaskPath "\Microsoft\Windows\Feedback\Siuf\" -TaskName "DmClientOnScenarioDownload"
+    Disable-ScheduledTaskSafe -TaskPath "\Microsoft\Windows\Application Experience\" -TaskName "Microsoft Compatibility Appraiser"
+    Disable-ScheduledTaskSafe -TaskPath "\Microsoft\Windows\Application Experience\" -TaskName "ProgramDataUpdater"
+    Disable-ScheduledTaskSafe -TaskPath "\Microsoft\Windows\Customer Experience Improvement Program\" -TaskName "Consolidator"
+    Disable-ScheduledTaskSafe -TaskPath "\Microsoft\Windows\Customer Experience Improvement Program\" -TaskName "UsbCeip"
+
+    Write-Ok "Reduccion de tareas tipo Kernel aplicada."
+}
+
+function Apply-KernelLikeProcessReduction {
+    Stop-ProcessSafe "Widgets"
+    Stop-ProcessSafe "msedgewebview2"
+    Stop-ProcessSafe "OneDrive"
+    Stop-ProcessSafe "Teams"
+    Stop-ProcessSafe "YourPhone"
+    Stop-ProcessSafe "PhoneExperienceHost"
+    Stop-ProcessSafe "GameBar"
+    Stop-ProcessSafe "SearchHost"
+    Stop-ProcessSafe "SearchApp"
+    Stop-ProcessSafe "XboxAppServices"
+
+    Write-Ok "Reduccion de procesos tipo Kernel aplicada."
+}
+
+function Apply-KernelLikeAppxReduction {
+    $kernelLikeApps = @(
+        "Microsoft.3DBuilder",
+        "Microsoft.549981C3F5F10",
+        "Microsoft.BingNews",
+        "Microsoft.BingWeather",
+        "Microsoft.GetHelp",
+        "Microsoft.Getstarted",
+        "Microsoft.MicrosoftOfficeHub",
+        "Microsoft.MicrosoftSolitaireCollection",
+        "Microsoft.MixedReality.Portal",
+        "Microsoft.Office.OneNote",
+        "Microsoft.People",
+        "Microsoft.SkypeApp",
+        "Microsoft.WindowsAlarms",
+        "Microsoft.WindowsFeedbackHub",
+        "Microsoft.WindowsMaps",
+        "Microsoft.WindowsSoundRecorder",
+        "Microsoft.YourPhone",
+        "Microsoft.ZuneMusic",
+        "Microsoft.ZuneVideo",
+        "Clipchamp.Clipchamp",
+        "MicrosoftTeams"
+    )
+
+    Remove-AppxPackagesSafe -PackageNames $kernelLikeApps
+    Write-Ok "Reduccion AppX tipo Kernel aplicada."
+}
+
 function Run-RepairTools {
     if (Test-CommandExists -Name "DISM") {
         try {
@@ -759,6 +882,23 @@ function Run-RepairAndCleanup {
     Write-Ok "REPAIR / CLEANUP completado."
 }
 
+function Run-KernelLikeReduction {
+    Invoke-Step -Name "Backup" -Action { Backup-ImportantSettings }
+    Invoke-Step -Name "Restore Point" -Action { Create-SystemRestorePoint }
+    Invoke-Step -Name "Kernel-Like Policies" -Action { Apply-KernelLikePolicies }
+    Invoke-Step -Name "Kernel-Like Services" -Action { Apply-KernelLikeServiceReduction }
+    Invoke-Step -Name "Kernel-Like Tasks" -Action { Apply-KernelLikeTaskReduction }
+    Invoke-Step -Name "Kernel-Like Processes" -Action { Apply-KernelLikeProcessReduction }
+    Invoke-Step -Name "Kernel-Like AppX Reduction" -Action { Apply-KernelLikeAppxReduction }
+    Invoke-Step -Name "Power Plan" -Action { Apply-PowerPlan }
+    Invoke-Step -Name "Cleanup" -Action { Apply-Cleanup }
+
+    Write-Warn "Esto intenta acercarse a un Windows mas recortado tipo Kernel."
+    Write-Warn "No garantiza menos de 80 procesos."
+    Write-Warn "Requiere reinicio para ver el recorte real."
+    Write-Ok "KERNEL-LIKE REDUCTION completado."
+}
+
 function Show-HelpInfo {
     Write-Section "HELP"
 
@@ -785,10 +925,20 @@ function Show-HelpInfo {
     Write-Host "   Instala Chrome, 7zip, VLC y Notepad++ con winget." -ForegroundColor Gray
     Write-Host ""
 
+    Write-Host "6. SHOW HELP" -ForegroundColor White
+    Write-Host "   Muestra esta ayuda." -ForegroundColor Gray
+    Write-Host ""
+
+    Write-Host "7. KERNEL-LIKE REDUCTION (POST-INSTALL)" -ForegroundColor White
+    Write-Host "   Agrega un recorte mas fuerte estilo Windows modificado." -ForegroundColor Gray
+    Write-Host "   Quita AppX y apaga mas fondo sin tocar lo mas critico para jugar." -ForegroundColor Gray
+    Write-Host ""
+
     Write-Host "Notas:" -ForegroundColor White
-    Write-Host " - No puedo prometer exactamente 50 procesos." -ForegroundColor Gray
+    Write-Host " - No puedo prometer exactamente 50 ni menos de 80 procesos." -ForegroundColor Gray
     Write-Host " - El script valida existencia antes de tocar servicios, tareas y procesos." -ForegroundColor Gray
     Write-Host " - SAFE es la mejor opcion para empezar." -ForegroundColor Gray
+    Write-Host " - Kernel-Like es mejor en instalaciones limpias." -ForegroundColor Gray
     Write-Host " - Reinicia siempre despues de aplicar perfiles." -ForegroundColor Gray
 }
 
@@ -805,6 +955,7 @@ function Show-Menu {
     Write-Host "4. REPAIR / CLEANUP" -ForegroundColor White
     Write-Host "5. INSTALL BASIC APPS" -ForegroundColor White
     Write-Host "6. SHOW HELP" -ForegroundColor White
+    Write-Host "7. KERNEL-LIKE REDUCTION (POST-INSTALL)" -ForegroundColor White
     Write-Host "0. EXIT" -ForegroundColor White
     Write-Host ""
 }
@@ -831,6 +982,7 @@ do {
         "4" { Run-RepairAndCleanup; Pause-Continue }
         "5" { Invoke-Step -Name "Install Basic Apps" -Action { Install-BasicApps }; Pause-Continue }
         "6" { Show-HelpInfo; Pause-Continue }
+        "7" { Run-KernelLikeReduction; Pause-Continue }
         "0" { break }
         default {
             Write-Warn "Opcion invalida."
@@ -838,7 +990,6 @@ do {
         }
     }
 } while ($true)
-
 
 Write-Log "===== Fin de ejecucion ====="
 
