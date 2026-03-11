@@ -854,7 +854,7 @@ function Apply-KernelLikeUserServiceReductionV2 {
 }
 
 function Run-RepairTools {
-    if (Test-CommandExists -Name "DISM")) {
+    if (Test-CommandExists -Name "DISM") {
         try {
             DISM /Online /Cleanup-Image /RestoreHealth
             Write-Ok "DISM completado."
@@ -1097,6 +1097,7 @@ do {
 } while ($true)
 
 Write-Log "===== Fin de ejecucion ====="
+
 
 
 
