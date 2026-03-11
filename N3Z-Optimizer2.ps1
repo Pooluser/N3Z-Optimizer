@@ -13,7 +13,7 @@ $ErrorActionPreference = "SilentlyContinue"
 
 $Script:ScriptRoot         = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $Script:AppName            = "N3Z OPTIMIZER"
-$Script:Version            = "2.4"
+$Script:Version            = "2.5"
 $Script:BaseDir            = Join-Path $env:ProgramData "N3Z-Optimizer"
 $Script:LogFile            = Join-Path $Script:BaseDir "n3z-optimizer.log"
 $Script:ConfigDir          = Join-Path $Script:BaseDir "backup"
@@ -166,6 +166,17 @@ function Test-TaskExists {
 function Test-ProcessExists {
     param([Parameter(Mandatory)][string]$Name)
     return [bool](Get-Process -Name $Name -ErrorAction SilentlyContinue)
+}
+
+function Get-GpuVendor {
+    try {
+        $gpuNames = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
+        $text = ($gpuNames -join " ")
+        if ($text -match "NVIDIA") { return "NVIDIA" }
+        if ($text -match "AMD|Radeon") { return "AMD" }
+        if ($text -match "Intel") { return "INTEL" }
+    } catch {}
+    return "UNKNOWN"
 }
 
 function Set-RegistryValue {
@@ -818,10 +829,6 @@ function Apply-KernelLikeAppxReduction {
     Write-Ok "Reduccion AppX tipo Kernel aplicada."
 }
 
-# =========================================================
-# NEW ULTRA V2 ADDITIONS
-# =========================================================
-
 function Apply-KernelLikeServiceReductionV2 {
     Disable-ServiceSafe "DoSvc"
     Disable-ServiceSafe "DusmSvc"
@@ -851,6 +858,134 @@ function Apply-KernelLikeUserServiceReductionV2 {
     Stop-ProcessSafe "ShellExperienceHost"
 
     Write-Ok "Reduccion adicional V2 aplicada."
+}
+
+# =========================================================
+# GPU / VENDOR PROFILES
+# =========================================================
+
+function Apply-WindowsGraphicsCompetitive {
+    $regItems = @(
+        @{ Path="HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"; Name="HwSchMode"; Value=2; Type="DWord" }
+        @{ Path="HKCU:\Software\Microsoft\GameBar"; Name="AutoGameModeEnabled"; Value=1; Type="DWord" }
+        @{ Path="HKCU:\Software\Microsoft\GameBar"; Name="ShowStartupPanel"; Value=0; Type="DWord" }
+        @{ Path="HKCU:\System\GameConfigStore"; Name="GameDVR_Enabled"; Value=0; Type="DWord" }
+        @{ Path="HKCU:\System\GameConfigStore"; Name="GameDVR_FSEBehaviorMode"; Value=2; Type="DWord" }
+        @{ Path="HKCU:\System\GameConfigStore"; Name="GameDVR_HonorUserFSEBehaviorMode"; Value=1; Type="DWord" }
+        @{ Path="HKCU:\Software\Microsoft\DirectX\UserGpuPreferences"; Name="DirectXUserGlobalSettings"; Value="VRROptimizeEnable=1;" ; Type="String" }
+    )
+
+    Set-RegistryValuesBatch -Items $regItems
+    Write-Ok "Windows graphics competitive profile aplicado."
+}
+
+function Apply-NvidiaOverlayReduction {
+    Stop-ProcessSafe "NVIDIA Share"
+    Stop-ProcessSafe "NVIDIA Web Helper"
+    Stop-ProcessSafe "nvsphelper64"
+    Stop-ProcessSafe "NVIDIA Overlay"
+    Stop-ProcessSafe "nvcontainer"
+    Write-Info "Si usas NVIDIA App / GeForce Experience overlay, se recomienda desactivar el overlay manualmente."
+}
+
+function Apply-AmdOverlayReduction {
+    Stop-ProcessSafe "RadeonSoftware"
+    Stop-ProcessSafe "AMDRSServ"
+    Stop-ProcessSafe "AMDOW"
+    Stop-ProcessSafe "atiesrxx"
+    Stop-ProcessSafe "atieclxx"
+    Write-Info "Si usas AMD Adrenalin overlay, se recomienda desactivar el overlay manualmente."
+}
+
+function Open-NvidiaPanel {
+    try {
+        Start-Process "nvcplui.exe" -ErrorAction SilentlyContinue | Out-Null
+        Write-Ok "NVIDIA Control Panel abierto."
+    } catch {
+        Write-Info "No se pudo abrir NVIDIA Control Panel automaticamente."
+    }
+}
+
+function Open-AmdSoftware {
+    $paths = @(
+        "$env:ProgramFiles\AMD\CNext\CNext\RadeonSoftware.exe",
+        "$env:ProgramFiles\AMD\CNext\CNext\cncmd.exe",
+        "$env:ProgramFiles\AMD\Performance Profile Client\AMDPerformanceProfileClient.exe"
+    )
+
+    $opened = $false
+    foreach ($p in $paths) {
+        if (Test-Path $p) {
+            try {
+                Start-Process $p -ErrorAction SilentlyContinue | Out-Null
+                Write-Ok "AMD Software abierto."
+                $opened = $true
+                break
+            } catch {}
+        }
+    }
+
+    if (-not $opened) {
+        Write-Info "No se pudo abrir AMD Software automaticamente."
+    }
+}
+
+function Show-NvidiaRecommendations {
+    Write-Section "NVIDIA MANUAL CHECKLIST"
+    Write-Host "En NVIDIA Control Panel, para competitivo normalmente conviene:" -ForegroundColor White
+    Write-Host " - Low Latency Mode: Ultra" -ForegroundColor Gray
+    Write-Host " - Power management mode: Prefer maximum performance" -ForegroundColor Gray
+    Write-Host " - Texture filtering - Quality: High performance" -ForegroundColor Gray
+    Write-Host " - Vertical sync: Off" -ForegroundColor Gray
+    Write-Host " - Threaded optimization: Auto" -ForegroundColor Gray
+    Write-Host " - Triple buffering: Off" -ForegroundColor Gray
+    Write-Host " - Max Frame Rate: Off o ajustado segun tu monitor" -ForegroundColor Gray
+    Write-Host " - Image Scaling / filters: solo si realmente lo necesitas" -ForegroundColor Gray
+}
+
+function Show-AmdRecommendations {
+    Write-Section "AMD MANUAL CHECKLIST"
+    Write-Host "En AMD Adrenalin, para competitivo normalmente conviene:" -ForegroundColor White
+    Write-Host " - Radeon Anti-Lag: On" -ForegroundColor Gray
+    Write-Host " - Radeon Chill: Off" -ForegroundColor Gray
+    Write-Host " - Radeon Boost: Off o probar segun juego" -ForegroundColor Gray
+    Write-Host " - Wait for Vertical Refresh: Always Off" -ForegroundColor Gray
+    Write-Host " - Texture Filtering Quality: Performance" -ForegroundColor Gray
+    Write-Host " - Surface Format Optimization: On" -ForegroundColor Gray
+    Write-Host " - Enhanced Sync: Off para competitivo puro, o probar" -ForegroundColor Gray
+    Write-Host " - Radeon Super Resolution: solo si la necesitas" -ForegroundColor Gray
+}
+
+function Run-NvidiaCompetitiveProfile {
+    $vendor = Get-GpuVendor
+    if ($vendor -ne "NVIDIA") {
+        Write-Warn "No detecte NVIDIA como GPU principal. Aun asi se puede aplicar la parte Windows."
+    }
+
+    Invoke-Step -Name "Competitive SAFE Base" -Action { Run-CompetitiveSafe }
+    Invoke-Step -Name "Windows Graphics Competitive" -Action { Apply-WindowsGraphicsCompetitive }
+    Invoke-Step -Name "NVIDIA Overlay Reduction" -Action { Apply-NvidiaOverlayReduction }
+    Invoke-Step -Name "Open NVIDIA Control Panel" -Action { Open-NvidiaPanel }
+
+    Show-NvidiaRecommendations
+    Write-Info "Perfil NVIDIA aplicado."
+    Write-Info "Reinicia el PC y luego revisa el panel NVIDIA."
+}
+
+function Run-AmdCompetitiveProfile {
+    $vendor = Get-GpuVendor
+    if ($vendor -ne "AMD") {
+        Write-Warn "No detecte AMD como GPU principal. Aun asi se puede aplicar la parte Windows."
+    }
+
+    Invoke-Step -Name "Competitive SAFE Base" -Action { Run-CompetitiveSafe }
+    Invoke-Step -Name "Windows Graphics Competitive" -Action { Apply-WindowsGraphicsCompetitive }
+    Invoke-Step -Name "AMD Overlay Reduction" -Action { Apply-AmdOverlayReduction }
+    Invoke-Step -Name "Open AMD Software" -Action { Open-AmdSoftware }
+
+    Show-AmdRecommendations
+    Write-Info "Perfil AMD aplicado."
+    Write-Info "Reinicia el PC y luego revisa AMD Software."
 }
 
 function Run-RepairTools {
@@ -1003,46 +1138,20 @@ function Show-HelpInfo {
     Write-Section "HELP"
 
     Write-Host "1. COMPETITIVE SAFE" -ForegroundColor White
-    Write-Host "   Recomendado para Fortnite / competitivo." -ForegroundColor Gray
-    Write-Host "   Reduce fondo, aplica rendimiento y activa plan de energia." -ForegroundColor Gray
-    Write-Host ""
-
     Write-Host "2. COMPETITIVE EXTREME" -ForegroundColor White
-    Write-Host "   Reduce mas procesos que SAFE." -ForegroundColor Gray
-    Write-Host "   Mas agresivo, menos comodidad del sistema." -ForegroundColor Gray
-    Write-Host ""
-
     Write-Host "3. FULL OPTIMIZATION" -ForegroundColor White
-    Write-Host "   Todo lo anterior + red + debloat." -ForegroundColor Gray
-    Write-Host "   Es mas agresivo que EXTREME." -ForegroundColor Gray
-    Write-Host ""
-
     Write-Host "4. REPAIR / CLEANUP" -ForegroundColor White
-    Write-Host "   Limpia temporales, resetea red y corre DISM/SFC." -ForegroundColor Gray
-    Write-Host ""
-
     Write-Host "5. INSTALL BASIC APPS" -ForegroundColor White
-    Write-Host "   Instala Chrome, 7zip, VLC y Notepad++ con winget." -ForegroundColor Gray
-    Write-Host ""
-
     Write-Host "6. SHOW HELP" -ForegroundColor White
-    Write-Host "   Muestra esta ayuda." -ForegroundColor Gray
-    Write-Host ""
-
     Write-Host "7. KERNEL-LIKE REDUCTION" -ForegroundColor White
-    Write-Host "   Recorte mas fuerte estilo Windows modificado." -ForegroundColor Gray
-    Write-Host ""
-
     Write-Host "8. KERNEL-LIKE REDUCTION V2 (ULTRA)" -ForegroundColor White
-    Write-Host "   Es la opcion mas fuerte del script." -ForegroundColor Gray
-    Write-Host "   Agrega mas recorte en servicios y user services." -ForegroundColor Gray
+    Write-Host "9. NVIDIA COMPETITIVE PROFILE" -ForegroundColor White
+    Write-Host "10. AMD COMPETITIVE PROFILE" -ForegroundColor White
     Write-Host ""
-
-    Write-Host "Notas:" -ForegroundColor White
-    Write-Host " - No puedo prometer exactamente 50 ni menos de 80 procesos." -ForegroundColor Gray
-    Write-Host " - SAFE es la mejor opcion para empezar." -ForegroundColor Gray
-    Write-Host " - V2 ULTRA es mejor en instalaciones limpias o de prueba." -ForegroundColor Gray
-    Write-Host " - Reinicia siempre despues de aplicar perfiles." -ForegroundColor Gray
+    Write-Host "Fuerza de menor a mayor:" -ForegroundColor White
+    Write-Host "COMPETITIVE SAFE < COMPETITIVE EXTREME < FULL < KERNEL-LIKE < KERNEL-LIKE V2" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "NVIDIA / AMD PROFILE usan base competitiva + tweaks graficos + cierre de overlays." -ForegroundColor Gray
 }
 
 # =========================================================
@@ -1060,6 +1169,8 @@ function Show-Menu {
     Write-Host "6. SHOW HELP" -ForegroundColor White
     Write-Host "7. KERNEL-LIKE REDUCTION" -ForegroundColor White
     Write-Host "8. KERNEL-LIKE REDUCTION V2 (ULTRA)" -ForegroundColor White
+    Write-Host "9. NVIDIA COMPETITIVE PROFILE" -ForegroundColor White
+    Write-Host "10. AMD COMPETITIVE PROFILE" -ForegroundColor White
     Write-Host "0. EXIT" -ForegroundColor White
     Write-Host ""
 }
@@ -1080,15 +1191,17 @@ do {
     $choice = Read-Host "Selecciona una opcion"
 
     switch ($choice) {
-        "1" { Run-CompetitiveSafe; Pause-Continue }
-        "2" { Run-CompetitiveExtreme; Pause-Continue }
-        "3" { Run-FullOptimization; Pause-Continue }
-        "4" { Run-RepairAndCleanup; Pause-Continue }
-        "5" { Invoke-Step -Name "Install Basic Apps" -Action { Install-BasicApps }; Pause-Continue }
-        "6" { Show-HelpInfo; Pause-Continue }
-        "7" { Run-KernelLikeReduction; Pause-Continue }
-        "8" { Run-KernelLikeReductionV2; Pause-Continue }
-        "0" { break }
+        "1"  { Run-CompetitiveSafe; Pause-Continue }
+        "2"  { Run-CompetitiveExtreme; Pause-Continue }
+        "3"  { Run-FullOptimization; Pause-Continue }
+        "4"  { Run-RepairAndCleanup; Pause-Continue }
+        "5"  { Invoke-Step -Name "Install Basic Apps" -Action { Install-BasicApps }; Pause-Continue }
+        "6"  { Show-HelpInfo; Pause-Continue }
+        "7"  { Run-KernelLikeReduction; Pause-Continue }
+        "8"  { Run-KernelLikeReductionV2; Pause-Continue }
+        "9"  { Run-NvidiaCompetitiveProfile; Pause-Continue }
+        "10" { Run-AmdCompetitiveProfile; Pause-Continue }
+        "0"  { break }
         default {
             Write-Warn "Opcion invalida."
             Pause-Continue
