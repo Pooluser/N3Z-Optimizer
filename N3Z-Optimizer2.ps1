@@ -854,10 +854,57 @@ function Apply-KernelLikeServiceReductionV2 {
 function Apply-KernelLikeUserServiceReductionV2 {
     Stop-ProcessSafe "SearchHost"
     Stop-ProcessSafe "SearchApp"
-    Stop-ProcessSafe "StartMenuExperienceHost"
-    Stop-ProcessSafe "ShellExperienceHost"
-
     Write-Ok "Reduccion adicional V2 aplicada."
+}
+function Apply-MouseLowLatencyTweaks {
+    $regItems = @(
+        @{ Path="HKCU:\Control Panel\Mouse"; Name="MouseSpeed"; Value="0"; Type="String" }
+        @{ Path="HKCU:\Control Panel\Mouse"; Name="MouseThreshold1"; Value="0"; Type="String" }
+        @{ Path="HKCU:\Control Panel\Mouse"; Name="MouseThreshold2"; Value="0"; Type="String" }
+    )
+
+    Set-RegistryValuesBatch -Items $regItems
+    Write-Ok "Mouse acceleration desactivada."
+}
+
+function Apply-LowInputLagTweaks {
+    $regItems = @(
+        @{ Path="HKCU:\Software\Microsoft\GameBar"; Name="AutoGameModeEnabled"; Value=1; Type="DWord" }
+        @{ Path="HKCU:\Software\Microsoft\GameBar"; Name="ShowStartupPanel"; Value=0; Type="DWord" }
+        @{ Path="HKCU:\System\GameConfigStore"; Name="GameDVR_Enabled"; Value=0; Type="DWord" }
+        @{ Path="HKCU:\System\GameConfigStore"; Name="GameDVR_FSEBehaviorMode"; Value=2; Type="DWord" }
+        @{ Path="HKCU:\System\GameConfigStore"; Name="GameDVR_HonorUserFSEBehaviorMode"; Value=1; Type="DWord" }
+        @{ Path="HKCU:\System\GameConfigStore"; Name="GameDVR_DXGIHonorFSEWindowsCompatible"; Value=1; Type="DWord" }
+    )
+
+    Set-RegistryValuesBatch -Items $regItems
+
+    Stop-ProcessSafe "GameBar"
+    Stop-ProcessSafe "Widgets"
+    Stop-ProcessSafe "msedgewebview2"
+    Stop-ProcessSafe "OneDrive"
+    Stop-ProcessSafe "Teams"
+    Stop-ProcessSafe "YourPhone"
+    Stop-ProcessSafe "PhoneExperienceHost"
+    Stop-ProcessSafe "SearchHost"
+    Stop-ProcessSafe "SearchApp"
+
+    Write-Ok "Low input lag tweaks aplicados."
+}
+
+function Run-LowInputLagProfile {
+    Invoke-Step -Name "Backup" -Action { Backup-ImportantSettings }
+    Invoke-Step -Name "Restore Point" -Action { Create-SystemRestorePoint }
+    Invoke-Step -Name "Performance Tweaks" -Action { Apply-PerformanceTweaks }
+    Invoke-Step -Name "Mouse Low Latency" -Action { Apply-MouseLowLatencyTweaks }
+    Invoke-Step -Name "Low Input Lag Tweaks" -Action { Apply-LowInputLagTweaks }
+    Invoke-Step -Name "Power Plan" -Action { Apply-PowerPlan }
+    Invoke-Step -Name "Cleanup" -Action { Apply-Cleanup }
+
+    Write-Warn "Este perfil prioriza sensacion de respuesta."
+    Write-Warn "No fuerza HAGS ni VRR."
+    Write-Info "Despues de aplicarlo, reinicia el PC."
+    Write-Ok "LOW INPUT LAG PROFILE completado."
 }
 
 # =========================================================
@@ -866,13 +913,11 @@ function Apply-KernelLikeUserServiceReductionV2 {
 
 function Apply-WindowsGraphicsCompetitive {
     $regItems = @(
-        @{ Path="HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"; Name="HwSchMode"; Value=2; Type="DWord" }
         @{ Path="HKCU:\Software\Microsoft\GameBar"; Name="AutoGameModeEnabled"; Value=1; Type="DWord" }
         @{ Path="HKCU:\Software\Microsoft\GameBar"; Name="ShowStartupPanel"; Value=0; Type="DWord" }
         @{ Path="HKCU:\System\GameConfigStore"; Name="GameDVR_Enabled"; Value=0; Type="DWord" }
         @{ Path="HKCU:\System\GameConfigStore"; Name="GameDVR_FSEBehaviorMode"; Value=2; Type="DWord" }
         @{ Path="HKCU:\System\GameConfigStore"; Name="GameDVR_HonorUserFSEBehaviorMode"; Value=1; Type="DWord" }
-        @{ Path="HKCU:\Software\Microsoft\DirectX\UserGpuPreferences"; Name="DirectXUserGlobalSettings"; Value="VRROptimizeEnable=1;" ; Type="String" }
     )
 
     Set-RegistryValuesBatch -Items $regItems
@@ -1147,6 +1192,9 @@ function Show-HelpInfo {
     Write-Host "8. KERNEL-LIKE REDUCTION V2 (ULTRA)" -ForegroundColor White
     Write-Host "9. NVIDIA COMPETITIVE PROFILE" -ForegroundColor White
     Write-Host "10. AMD COMPETITIVE PROFILE" -ForegroundColor White
+    Write-Host "11. LOW INPUT LAG PROFILE" -ForegroundColor White
+    Write-Host "   Perfil enfocado en menor input lag y mejor respuesta." -ForegroundColor Gray
+    Write-Host "   No fuerza HAGS ni VRR." -ForegroundColor Gray
     Write-Host ""
     Write-Host "Fuerza de menor a mayor:" -ForegroundColor White
     Write-Host "COMPETITIVE SAFE < COMPETITIVE EXTREME < FULL < KERNEL-LIKE < KERNEL-LIKE V2" -ForegroundColor Gray
@@ -1171,6 +1219,7 @@ function Show-Menu {
     Write-Host "8. KERNEL-LIKE REDUCTION V2 (ULTRA)" -ForegroundColor White
     Write-Host "9. NVIDIA COMPETITIVE PROFILE" -ForegroundColor White
     Write-Host "10. AMD COMPETITIVE PROFILE" -ForegroundColor White
+    Write-Host "11. LOW INPUT LAG PROFILE" -ForegroundColor White
     Write-Host "0. EXIT" -ForegroundColor White
     Write-Host ""
 }
@@ -1201,6 +1250,7 @@ do {
         "8"  { Run-KernelLikeReductionV2; Pause-Continue }
         "9"  { Run-NvidiaCompetitiveProfile; Pause-Continue }
         "10" { Run-AmdCompetitiveProfile; Pause-Continue }
+        "11" { Run-LowInputLagProfile; Pause-Continue }
         "0"  { break }
         default {
             Write-Warn "Opcion invalida."
@@ -1210,6 +1260,7 @@ do {
 } while ($true)
 
 Write-Log "===== Fin de ejecucion ====="
+
 
 
 
